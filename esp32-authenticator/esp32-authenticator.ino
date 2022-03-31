@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <TOTP.h>
+#include <Arduino.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 #include <Adafruit_SSD1306.h>
@@ -25,6 +26,9 @@ String syncMessage1 = String("syncing with time");
 String syncMessage2 = String("server");
 
 unsigned long timeWhenTOTPGenerated;
+int buttonState;
+const int BUTTON_PIN = 13;
+int numOfAccounts = 1;
 
 // europe.pool.ntp.org
 const char * udpAddress = "85.254.217.5";
@@ -41,7 +45,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 TOTP totp = TOTP(hmacKey, 10);
 
 static VERSION build_version = {
-  0, 0, 1
+  0, 0, 2
 };
 
 void setup() {
@@ -50,12 +54,14 @@ void setup() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
   bootDisplay(message, version, true);
-  
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
   delay(2500);
   initWifi();
 }
 
 void loop() {
+
+  buttonState = digitalRead(BUTTON_PIN);
 
   timeClient.update();
   unsigned long epoch = timeClient.getEpochTime();
@@ -64,9 +70,16 @@ void loop() {
   if(totpCode != newCode) {
     totpCode = String(newCode);
     timeWhenTOTPGenerated = epoch;
-    updateDisplay(totpCode);
+    updateDisplay(totpCode, numOfAccounts);
   } else {
     drawProgressLine(timeWhenTOTPGenerated);
+  }
+
+  if (!buttonState) {
+    // @todo - iterate through data array to display next account
+    Serial.println("button pressed");
+    numOfAccounts++;
+    delay(100);
   }
 
 }
@@ -119,10 +132,14 @@ void bootDisplay(String m1, String m2, boolean displayVersion) {
   display.display();
 }
 
-void updateDisplay(String totp) {
+//  @todo - make this dynamic (on button press, refresh screen)
+void updateDisplay(String totp, int accountNumber) {
   display.clearDisplay();
   display.setCursor(10,14);
   display.print("Some Issuer");
+  display.setCursor(100,14);
+  display.print("1/");
+  display.print(accountNumber);
   display.setTextSize(3);
   display.setCursor(10,30);
   display.print(totp);
@@ -140,3 +157,4 @@ void drawProgressLine(unsigned long epoch) {
   display.drawLine(0, 2, 128 - (128 * percentage), 2, WHITE);    //  line is drawn backwards
   display.display();
 }
+
