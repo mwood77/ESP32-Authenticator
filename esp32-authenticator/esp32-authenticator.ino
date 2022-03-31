@@ -8,7 +8,6 @@
 #define SCREEN_HEIGHT 64 
 #define OLED_RESET -1
 
-struct tm timeinfo;
 struct VERSION {
   int major;
   int minor;
@@ -22,25 +21,24 @@ String connecting = String("SSID:");
 String message = String("ESP32-Authenticator");
 String version = String("version");
 String totpCode = String("");
+String syncMessage1 = String("syncing with time");
+String syncMessage2 = String("server");
 
-long timeWhenTOTPGenerated;
+unsigned long timeWhenTOTPGenerated;
 
-uint8_t hmacKey[] = {0x52, 0x41, 0x50, 0x4f, 0x59, 0x47, 0x52, 0x54, 0x44, 0x50, 0x58, 0x47, 0x53, 0x32, 0x59, 0x48};
+// europe.pool.ntp.org
+const char * udpAddress = "85.254.217.5";
+const int udpPort = 3333;
 
-/**  
-  offset examples
-  GMT +1 = 3600 (3600 seconds in an hour)
-  GMT +8 = 28800
-  GMT -1 = -3600
-  GMT 0 = 0
-*/
-const long  gmtOffset_sec = 3600;
+//XK4GBLITWBVMCBOM
+// to hex -> 0xba, 0xb8, 0x60, 0xad, 0x13, 0xb0, 0x6a, 0xc1, 0x05, 0xcc
+uint8_t hmacKey[] =  {0xba, 0xb8, 0x60, 0xad, 0x13, 0xb0, 0x6a, 0xc1, 0x05, 0xcc};
 
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", gmtOffset_sec);
+WiFiUDP udp;
+NTPClient timeClient(udp, udpAddress);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-TOTP totp = TOTP(hmacKey, 16);
+TOTP totp = TOTP(hmacKey, 10);
 
 static VERSION build_version = {
   0, 0, 1
@@ -55,20 +53,20 @@ void setup() {
   
   delay(2500);
   initWifi();
-  
 }
 
 void loop() {
 
-  // @todo - UDP not working...
-  String newCode = String(totp.getCode(timeClient.getEpochTime()));
+  timeClient.update();
+  unsigned long epoch = timeClient.getEpochTime();
+  String newCode = String(totp.getCode(epoch));
 
   if(totpCode != newCode) {
     totpCode = String(newCode);
-    timeWhenTOTPGenerated = timeClient.getEpochTime();
+    timeWhenTOTPGenerated = epoch;
     updateDisplay(totpCode);
   } else {
-    drawProgressLine();
+    drawProgressLine(timeWhenTOTPGenerated);
   }
 
 }
@@ -93,10 +91,11 @@ void initWifi() {
     delay(1000);
     display.display();
   }
-  Serial.println("connection made");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-
+  display.clearDisplay();
+  bootDisplay(syncMessage1, syncMessage2, false);
+  display.display();
+  udp.begin(WiFi.localIP(),udpPort);
+  delay(2000);
   timeClient.begin();
 }
 
@@ -132,11 +131,12 @@ void updateDisplay(String totp) {
 
 }
 
-void drawProgressLine() {
-  const float currentTime = timeClient.getEpochTime();
-  const float currentProgress = ((currentTime - timeWhenTOTPGenerated) / 30);
+void drawProgressLine(unsigned long epoch) {
+  unsigned long currentTime = timeClient.getEpochTime();  
+  float secondsElapsed = (currentTime - epoch) % 30;
+  float percentage = (secondsElapsed / 30);
   
   display.fillRect(0, 0, 128, 6, BLACK);
-  display.drawLine(0, 2, 128 - (128 * currentProgress), 2, WHITE);    //  line is drawn backwards
+  display.drawLine(0, 2, 128 - (128 * percentage), 2, WHITE);    //  line is drawn backwards
   display.display();
 }
